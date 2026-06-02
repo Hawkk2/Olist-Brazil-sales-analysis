@@ -77,10 +77,18 @@ GO
 -- =============================================================
 -- SECTION 2: Migration — _dataset tables → typed tables
 -- Casts nvarchar columns to correct data types.
--- Safe to re-run: deletes in FK-safe order before reloading.
+-- Safe to re-run: DELETEs in FK-safe order, no TRUNCATE used.
 -- =============================================================
 
--- Clear all typed tables in child-first order (respects FK constraints)
+-- Step 1: Check translation table column names before running
+-- (wizard may rename headers — confirm these match your import)
+SELECT COLUMN_NAME
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'product_category_name_translation_dataset'
+ORDER BY ORDINAL_POSITION;
+GO
+
+-- Step 2: Clear all typed tables — child-first order for FK safety
 DELETE FROM dbo.olist_order_reviews;
 DELETE FROM dbo.olist_order_payments;
 DELETE FROM dbo.olist_order_items;
@@ -95,7 +103,6 @@ GO
 -- -------------------------------------------------------
 -- Customers
 -- -------------------------------------------------------
-
 INSERT INTO dbo.olist_customers (
     customer_id, customer_unique_id, customer_zip_code_prefix,
     customer_city, customer_state
@@ -115,8 +122,6 @@ GO
 -- -------------------------------------------------------
 -- Sellers
 -- -------------------------------------------------------
-TRUNCATE TABLE dbo.olist_sellers;
-
 INSERT INTO dbo.olist_sellers (
     seller_id, seller_zip_code_prefix, seller_city, seller_state
 )
@@ -133,9 +138,9 @@ GO
 
 -- -------------------------------------------------------
 -- Category Translation
+-- NOTE: Update column names below if SSMS wizard renamed them.
+--       Run the Step 1 check above to confirm exact names.
 -- -------------------------------------------------------
-TRUNCATE TABLE dbo.product_category_name_translation;
-
 INSERT INTO dbo.product_category_name_translation (
     product_category_name, product_category_name_english
 )
@@ -151,8 +156,6 @@ GO
 -- -------------------------------------------------------
 -- Products
 -- -------------------------------------------------------
-TRUNCATE TABLE dbo.olist_products;
-
 INSERT INTO dbo.olist_products (
     product_id, product_category_name,
     product_name_lenght, product_description_lenght,
@@ -176,13 +179,8 @@ PRINT CONCAT('Products loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Orders (load after customers due to FK)
+-- Orders (must load before items, payments, reviews)
 -- -------------------------------------------------------
-TRUNCATE TABLE dbo.olist_order_reviews;    -- child tables first
-TRUNCATE TABLE dbo.olist_order_payments;
-TRUNCATE TABLE dbo.olist_order_items;
-TRUNCATE TABLE dbo.olist_orders;
-
 INSERT INTO dbo.olist_orders (
     order_id, customer_id, order_status,
     order_purchase_timestamp, order_approved_at,
@@ -205,23 +203,23 @@ PRINT CONCAT('Orders loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Order Items (load after orders, products, sellers)
+-- Order Items (JOIN replaces EXISTS — more reliable)
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_order_items (
     order_id, order_item_id, product_id, seller_id,
     shipping_limit_date, price, freight_value
 )
 SELECT
-    TRIM(order_id),
-    TRY_CAST(order_item_id AS TINYINT),
-    TRIM(product_id),
-    TRIM(seller_id),
-    TRY_CONVERT(DATETIME, shipping_limit_date),
-    TRY_CAST(price         AS DECIMAL(10,2)),
-    TRY_CAST(freight_value AS DECIMAL(10,2))
-FROM dbo.olist_order_items_dataset
-WHERE order_id IS NOT NULL AND order_id <> ''
-  AND EXISTS (SELECT 1 FROM dbo.olist_orders WHERE order_id = TRIM(dbo.olist_order_items_dataset.order_id));
+    TRIM(i.order_id),
+    TRY_CAST(i.order_item_id AS TINYINT),
+    TRIM(i.product_id),
+    TRIM(i.seller_id),
+    TRY_CONVERT(DATETIME, i.shipping_limit_date),
+    TRY_CAST(i.price         AS DECIMAL(10,2)),
+    TRY_CAST(i.freight_value AS DECIMAL(10,2))
+FROM dbo.olist_order_items_dataset i
+JOIN dbo.olist_orders o ON TRIM(i.order_id) = o.order_id
+WHERE i.order_id IS NOT NULL AND i.order_id <> '';
 
 PRINT CONCAT('Order items loaded: ', @@ROWCOUNT);
 GO
@@ -234,14 +232,14 @@ INSERT INTO dbo.olist_order_payments (
     payment_installments, payment_value
 )
 SELECT
-    TRIM(order_id),
-    TRY_CAST(payment_sequential   AS TINYINT),
-    TRIM(payment_type),
-    TRY_CAST(payment_installments AS TINYINT),
-    TRY_CAST(payment_value        AS DECIMAL(10,2))
-FROM dbo.olist_order_payments_dataset
-WHERE order_id IS NOT NULL AND order_id <> ''
-  AND EXISTS (SELECT 1 FROM dbo.olist_orders WHERE order_id = TRIM(dbo.olist_order_payments_dataset.order_id));
+    TRIM(p.order_id),
+    TRY_CAST(p.payment_sequential   AS TINYINT),
+    TRIM(p.payment_type),
+    TRY_CAST(p.payment_installments AS TINYINT),
+    TRY_CAST(p.payment_value        AS DECIMAL(10,2))
+FROM dbo.olist_order_payments_dataset p
+JOIN dbo.olist_orders o ON TRIM(p.order_id) = o.order_id
+WHERE p.order_id IS NOT NULL AND p.order_id <> '';
 
 PRINT CONCAT('Order payments loaded: ', @@ROWCOUNT);
 GO
@@ -255,33 +253,31 @@ INSERT INTO dbo.olist_order_reviews (
     review_creation_date, review_answer_timestamp
 )
 SELECT
-    TRIM(review_id),
-    TRIM(order_id),
-    TRY_CAST(review_score AS TINYINT),
-    NULLIF(TRIM(review_comment_title),   ''),
-    NULLIF(TRIM(review_comment_message), ''),
-    TRY_CONVERT(DATETIME, review_creation_date),
-    TRY_CONVERT(DATETIME, review_answer_timestamp)
-FROM dbo.olist_order_reviews_dataset
-WHERE review_id IS NOT NULL AND review_id <> ''
-  AND EXISTS (SELECT 1 FROM dbo.olist_orders WHERE order_id = TRIM(dbo.olist_order_reviews_dataset.order_id));
+    TRIM(r.review_id),
+    TRIM(r.order_id),
+    TRY_CAST(r.review_score AS TINYINT),
+    NULLIF(TRIM(r.review_comment_title),   ''),
+    NULLIF(TRIM(r.review_comment_message), ''),
+    TRY_CONVERT(DATETIME, r.review_creation_date),
+    TRY_CONVERT(DATETIME, r.review_answer_timestamp)
+FROM dbo.olist_order_reviews_dataset r
+JOIN dbo.olist_orders o ON TRIM(r.order_id) = o.order_id
+WHERE r.review_id IS NOT NULL AND r.review_id <> '';
 
 PRINT CONCAT('Order reviews loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Geolocation (no FK — load independently)
+-- Geolocation (no FK — already loaded; skip if 1M rows exist)
 -- -------------------------------------------------------
-TRUNCATE TABLE dbo.olist_geolocation;
-
 INSERT INTO dbo.olist_geolocation (
     geolocation_zip_code_prefix, geolocation_lat, geolocation_lng,
     geolocation_city, geolocation_state
 )
 SELECT
     TRIM(geolocation_zip_code_prefix),
-    TRY_CAST(geolocation_lat  AS DECIMAL(18,15)),
-    TRY_CAST(geolocation_lng  AS DECIMAL(18,15)),
+    TRY_CAST(geolocation_lat AS DECIMAL(18,15)),
+    TRY_CAST(geolocation_lng AS DECIMAL(18,15)),
     TRIM(geolocation_city),
     UPPER(TRIM(geolocation_state))
 FROM dbo.olist_geolocation_dataset
@@ -294,15 +290,16 @@ GO
 -- -------------------------------------------------------
 -- Post-migration row count verification
 -- -------------------------------------------------------
-SELECT 'olist_customers'                    AS TableName, COUNT(*) AS RowCount FROM dbo.olist_customers
-UNION ALL SELECT 'olist_sellers',                          COUNT(*) FROM dbo.olist_sellers
-UNION ALL SELECT 'olist_products',                         COUNT(*) FROM dbo.olist_products
-UNION ALL SELECT 'olist_orders',                           COUNT(*) FROM dbo.olist_orders
-UNION ALL SELECT 'olist_order_items',                      COUNT(*) FROM dbo.olist_order_items
-UNION ALL SELECT 'olist_order_payments',                   COUNT(*) FROM dbo.olist_order_payments
-UNION ALL SELECT 'olist_order_reviews',                    COUNT(*) FROM dbo.olist_order_reviews
-UNION ALL SELECT 'olist_geolocation',                      COUNT(*) FROM dbo.olist_geolocation
-UNION ALL SELECT 'product_category_name_translation',      COUNT(*) FROM dbo.product_category_name_translation;
+SELECT 'olist_customers'                  AS tbl, COUNT(*) AS row_cnt FROM dbo.olist_customers
+UNION ALL SELECT 'olist_sellers',                  COUNT(*) FROM dbo.olist_sellers
+UNION ALL SELECT 'olist_products',                 COUNT(*) FROM dbo.olist_products
+UNION ALL SELECT 'olist_orders',                   COUNT(*) FROM dbo.olist_orders
+UNION ALL SELECT 'olist_order_items',              COUNT(*) FROM dbo.olist_order_items
+UNION ALL SELECT 'olist_order_payments',           COUNT(*) FROM dbo.olist_order_payments
+UNION ALL SELECT 'olist_order_reviews',            COUNT(*) FROM dbo.olist_order_reviews
+UNION ALL SELECT 'olist_geolocation',              COUNT(*) FROM dbo.olist_geolocation
+UNION ALL SELECT 'category_translation',           COUNT(*) FROM dbo.product_category_name_translation
+ORDER BY tbl;
 GO
 
 -- =============================================================
