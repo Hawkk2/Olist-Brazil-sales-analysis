@@ -145,10 +145,10 @@ INSERT INTO dbo.product_category_name_translation (
     product_category_name, product_category_name_english
 )
 SELECT
-    TRIM(product_category_name),
-    TRIM(product_category_name_english)
+    TRIM(column1),
+    TRIM(column2)
 FROM dbo.product_category_name_translation_dataset
-WHERE product_category_name IS NOT NULL AND product_category_name <> '';
+WHERE column1 IS NOT NULL AND column1 <> '';
 
 PRINT CONCAT('Category translations loaded: ', @@ROWCOUNT);
 GO
