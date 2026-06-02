@@ -2,110 +2,65 @@
 -- Olist Brazil E-Commerce: Data Quality Checks & Migration
 -- Database: BrazilOlistDB
 -- Platform: T-SQL (SQL Server)
--- Description: Section 1 runs quality checks against the raw
---              _dataset tables imported via SSMS wizard.
---              Section 2 migrates data into the properly-typed
---              tables created by 01_schema/create_tables.sql.
---              Section 3 creates the master staging view.
--- Run order: 3 of 4 (after schema + CSV import)
+-- Run order: 3 of 4 (after schema creation + CSV import)
 -- =============================================================
 
 USE BrazilOlistDB;
 GO
 
 -- =============================================================
--- SECTION 1: Data Quality Checks
--- Run these first. Review output before proceeding to Section 2.
+-- SECTION 1: Confirm imported column names and data types
 -- =============================================================
 
--- 1a. Row counts across all imported tables
-SELECT 'olist_customers_dataset'                AS TableName, COUNT(*) AS RowCount FROM dbo.olist_customers_dataset
-UNION ALL SELECT 'olist_sellers_dataset',                     COUNT(*) FROM dbo.olist_sellers_dataset
-UNION ALL SELECT 'olist_products_dataset',                    COUNT(*) FROM dbo.olist_products_dataset
-UNION ALL SELECT 'olist_orders_dataset',                      COUNT(*) FROM dbo.olist_orders_dataset
-UNION ALL SELECT 'olist_order_items_dataset',                 COUNT(*) FROM dbo.olist_order_items_dataset
-UNION ALL SELECT 'olist_order_payments_dataset',              COUNT(*) FROM dbo.olist_order_payments_dataset
-UNION ALL SELECT 'olist_order_reviews_dataset',               COUNT(*) FROM dbo.olist_order_reviews_dataset
-UNION ALL SELECT 'olist_geolocation_dataset',                 COUNT(*) FROM dbo.olist_geolocation_dataset
-UNION ALL SELECT 'product_category_name_translation_dataset', COUNT(*) FROM dbo.product_category_name_translation_dataset;
-
--- 1b. Order status distribution
-SELECT order_status, COUNT(*) AS OrderCount
-FROM dbo.olist_orders_dataset
-GROUP BY order_status
-ORDER BY OrderCount DESC;
-
--- 1c. Date range check — confirm 2016–2018 range
 SELECT
-    MIN(order_purchase_timestamp)   AS EarliestOrder,
-    MAX(order_purchase_timestamp)   AS LatestOrder
-FROM dbo.olist_orders_dataset;
-
--- 1d. Null check on order items (price and freight are critical)
-SELECT
-    SUM(CASE WHEN price         IS NULL OR price = ''         THEN 1 ELSE 0 END) AS NullPrice,
-    SUM(CASE WHEN freight_value IS NULL OR freight_value = '' THEN 1 ELSE 0 END) AS NullFreight,
-    SUM(CASE WHEN product_id    IS NULL OR product_id = ''    THEN 1 ELSE 0 END) AS NullProductID,
-    SUM(CASE WHEN seller_id     IS NULL OR seller_id = ''     THEN 1 ELSE 0 END) AS NullSellerID
-FROM dbo.olist_order_items_dataset;
-
--- 1e. Review score distribution (expect 1–5 only)
-SELECT review_score, COUNT(*) AS ReviewCount
-FROM dbo.olist_order_reviews_dataset
-GROUP BY review_score
-ORDER BY review_score;
-
--- 1f. Payment type distribution
-SELECT payment_type, COUNT(*) AS PaymentCount
-FROM dbo.olist_order_payments_dataset
-GROUP BY payment_type
-ORDER BY PaymentCount DESC;
-
--- 1g. Products with no category (will show as 'Uncategorized')
-SELECT COUNT(*) AS ProductsWithNoCategory
-FROM dbo.olist_products_dataset
-WHERE product_category_name IS NULL OR product_category_name = '';
-
--- 1h. Orders with no matching items (orphaned orders)
-SELECT COUNT(*) AS OrdersWithNoItems
-FROM dbo.olist_orders_dataset o
-LEFT JOIN dbo.olist_order_items_dataset i ON o.order_id = i.order_id
-WHERE i.order_id IS NULL;
-
+    TABLE_NAME,
+    COLUMN_NAME,
+    DATA_TYPE,
+    CHARACTER_MAXIMUM_LENGTH,
+    IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = 'dbo'
+  AND TABLE_NAME IN (
+      'olist_customers_dataset',
+      'olist_sellers_dataset',
+      'olist_products_dataset',
+      'olist_orders_dataset',
+      'olist_order_items_dataset',
+      'olist_order_payments_dataset',
+      'olist_order_reviews_dataset',
+      'olist_geolocation_dataset',
+      'product_category_name_translation_dataset'
+  )
+ORDER BY TABLE_NAME, ORDINAL_POSITION;
 GO
 
 -- =============================================================
 -- SECTION 2: Migration — _dataset tables → typed tables
--- Casts nvarchar columns to correct data types.
--- Safe to re-run: DELETEs in FK-safe order, no TRUNCATE used.
+-- Deletes in child-first FK order, then inserts with casting.
+-- Safe to re-run at any time.
 -- =============================================================
 
--- Step 1: Check translation table column names before running
--- (wizard may rename headers — confirm these match your import)
-SELECT COLUMN_NAME
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_NAME = 'product_category_name_translation_dataset'
-ORDER BY ORDINAL_POSITION;
-GO
-
--- Step 2: Clear all typed tables — child-first order for FK safety
+-- Step 1: Clear typed tables in child-first order
 DELETE FROM dbo.olist_order_reviews;
 DELETE FROM dbo.olist_order_payments;
 DELETE FROM dbo.olist_order_items;
 DELETE FROM dbo.olist_orders;
-DELETE FROM dbo.olist_geolocation;
 DELETE FROM dbo.olist_products;
 DELETE FROM dbo.product_category_name_translation;
 DELETE FROM dbo.olist_sellers;
 DELETE FROM dbo.olist_customers;
+DELETE FROM dbo.olist_geolocation;
 GO
 
 -- -------------------------------------------------------
 -- Customers
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_customers (
-    customer_id, customer_unique_id, customer_zip_code_prefix,
-    customer_city, customer_state
+    customer_id,
+    customer_unique_id,
+    customer_zip_code_prefix,
+    customer_city,
+    customer_state
 )
 SELECT
     TRIM(customer_id),
@@ -123,7 +78,10 @@ GO
 -- Sellers
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_sellers (
-    seller_id, seller_zip_code_prefix, seller_city, seller_state
+    seller_id,
+    seller_zip_code_prefix,
+    seller_city,
+    seller_state
 )
 SELECT
     TRIM(seller_id),
@@ -138,11 +96,12 @@ GO
 
 -- -------------------------------------------------------
 -- Category Translation
--- NOTE: Update column names below if SSMS wizard renamed them.
---       Run the Step 1 check above to confirm exact names.
+-- column1 = product_category_name (Portuguese)
+-- column2 = product_category_name_english
 -- -------------------------------------------------------
 INSERT INTO dbo.product_category_name_translation (
-    product_category_name, product_category_name_english
+    product_category_name,
+    product_category_name_english
 )
 SELECT
     TRIM(column1),
@@ -157,10 +116,15 @@ GO
 -- Products
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_products (
-    product_id, product_category_name,
-    product_name_lenght, product_description_lenght,
-    product_photos_qty, product_weight_g,
-    product_length_cm, product_height_cm, product_width_cm
+    product_id,
+    product_category_name,
+    product_name_lenght,
+    product_description_lenght,
+    product_photos_qty,
+    product_weight_g,
+    product_length_cm,
+    product_height_cm,
+    product_width_cm
 )
 SELECT
     TRIM(product_id),
@@ -179,12 +143,16 @@ PRINT CONCAT('Products loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Orders (must load before items, payments, reviews)
+-- Orders (load before items, payments, reviews)
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_orders (
-    order_id, customer_id, order_status,
-    order_purchase_timestamp, order_approved_at,
-    order_delivered_carrier_date, order_delivered_customer_date,
+    order_id,
+    customer_id,
+    order_status,
+    order_purchase_timestamp,
+    order_approved_at,
+    order_delivered_carrier_date,
+    order_delivered_customer_date,
     order_estimated_delivery_date
 )
 SELECT
@@ -203,22 +171,28 @@ PRINT CONCAT('Orders loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Order Items (JOIN replaces EXISTS — more reliable)
+-- Order Items
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_order_items (
-    order_id, order_item_id, product_id, seller_id,
-    shipping_limit_date, price, freight_value
+    order_id,
+    order_item_id,
+    product_id,
+    seller_id,
+    shipping_limit_date,
+    price,
+    freight_value
 )
 SELECT
     TRIM(i.order_id),
-    TRY_CAST(i.order_item_id AS TINYINT),
+    TRY_CAST(i.order_item_id   AS TINYINT),
     TRIM(i.product_id),
     TRIM(i.seller_id),
     TRY_CONVERT(DATETIME, i.shipping_limit_date),
-    TRY_CAST(i.price         AS DECIMAL(10,2)),
-    TRY_CAST(i.freight_value AS DECIMAL(10,2))
+    TRY_CAST(i.price           AS DECIMAL(10,2)),
+    TRY_CAST(i.freight_value   AS DECIMAL(10,2))
 FROM dbo.olist_order_items_dataset i
-JOIN dbo.olist_orders o ON TRIM(i.order_id) = o.order_id
+JOIN dbo.olist_orders o
+    ON TRIM(i.order_id) = o.order_id
 WHERE i.order_id IS NOT NULL AND i.order_id <> '';
 
 PRINT CONCAT('Order items loaded: ', @@ROWCOUNT);
@@ -228,8 +202,11 @@ GO
 -- Order Payments
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_order_payments (
-    order_id, payment_sequential, payment_type,
-    payment_installments, payment_value
+    order_id,
+    payment_sequential,
+    payment_type,
+    payment_installments,
+    payment_value
 )
 SELECT
     TRIM(p.order_id),
@@ -238,7 +215,8 @@ SELECT
     TRY_CAST(p.payment_installments AS TINYINT),
     TRY_CAST(p.payment_value        AS DECIMAL(10,2))
 FROM dbo.olist_order_payments_dataset p
-JOIN dbo.olist_orders o ON TRIM(p.order_id) = o.order_id
+JOIN dbo.olist_orders o
+    ON TRIM(p.order_id) = o.order_id
 WHERE p.order_id IS NOT NULL AND p.order_id <> '';
 
 PRINT CONCAT('Order payments loaded: ', @@ROWCOUNT);
@@ -248,36 +226,44 @@ GO
 -- Order Reviews
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_order_reviews (
-    review_id, order_id, review_score,
-    review_comment_title, review_comment_message,
-    review_creation_date, review_answer_timestamp
+    review_id,
+    order_id,
+    review_score,
+    review_comment_title,
+    review_comment_message,
+    review_creation_date,
+    review_answer_timestamp
 )
 SELECT
     TRIM(r.review_id),
     TRIM(r.order_id),
-    TRY_CAST(r.review_score AS TINYINT),
+    TRY_CAST(r.review_score         AS TINYINT),
     NULLIF(TRIM(r.review_comment_title),   ''),
     NULLIF(TRIM(r.review_comment_message), ''),
     TRY_CONVERT(DATETIME, r.review_creation_date),
     TRY_CONVERT(DATETIME, r.review_answer_timestamp)
 FROM dbo.olist_order_reviews_dataset r
-JOIN dbo.olist_orders o ON TRIM(r.order_id) = o.order_id
+JOIN dbo.olist_orders o
+    ON TRIM(r.order_id) = o.order_id
 WHERE r.review_id IS NOT NULL AND r.review_id <> '';
 
 PRINT CONCAT('Order reviews loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Geolocation (no FK — already loaded; skip if 1M rows exist)
+-- Geolocation (no FK constraints)
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_geolocation (
-    geolocation_zip_code_prefix, geolocation_lat, geolocation_lng,
-    geolocation_city, geolocation_state
+    geolocation_zip_code_prefix,
+    geolocation_lat,
+    geolocation_lng,
+    geolocation_city,
+    geolocation_state
 )
 SELECT
     TRIM(geolocation_zip_code_prefix),
-    TRY_CAST(geolocation_lat AS DECIMAL(18,15)),
-    TRY_CAST(geolocation_lng AS DECIMAL(18,15)),
+    TRY_CAST(geolocation_lat   AS DECIMAL(18,15)),
+    TRY_CAST(geolocation_lng   AS DECIMAL(18,15)),
     TRIM(geolocation_city),
     UPPER(TRIM(geolocation_state))
 FROM dbo.olist_geolocation_dataset
@@ -288,24 +274,24 @@ PRINT CONCAT('Geolocation rows loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Post-migration row count verification
+-- Row count verification — compare against _dataset tables
 -- -------------------------------------------------------
-SELECT 'olist_customers'                  AS tbl, COUNT(*) AS row_cnt FROM dbo.olist_customers
-UNION ALL SELECT 'olist_sellers',                  COUNT(*) FROM dbo.olist_sellers
-UNION ALL SELECT 'olist_products',                 COUNT(*) FROM dbo.olist_products
-UNION ALL SELECT 'olist_orders',                   COUNT(*) FROM dbo.olist_orders
-UNION ALL SELECT 'olist_order_items',              COUNT(*) FROM dbo.olist_order_items
-UNION ALL SELECT 'olist_order_payments',           COUNT(*) FROM dbo.olist_order_payments
-UNION ALL SELECT 'olist_order_reviews',            COUNT(*) FROM dbo.olist_order_reviews
-UNION ALL SELECT 'olist_geolocation',              COUNT(*) FROM dbo.olist_geolocation
-UNION ALL SELECT 'category_translation',           COUNT(*) FROM dbo.product_category_name_translation
+SELECT 'olist_customers'             AS tbl, COUNT(*) AS row_cnt FROM dbo.olist_customers
+UNION ALL SELECT 'olist_sellers',             COUNT(*) FROM dbo.olist_sellers
+UNION ALL SELECT 'olist_products',            COUNT(*) FROM dbo.olist_products
+UNION ALL SELECT 'category_translation',      COUNT(*) FROM dbo.product_category_name_translation
+UNION ALL SELECT 'olist_orders',              COUNT(*) FROM dbo.olist_orders
+UNION ALL SELECT 'olist_order_items',         COUNT(*) FROM dbo.olist_order_items
+UNION ALL SELECT 'olist_order_payments',      COUNT(*) FROM dbo.olist_order_payments
+UNION ALL SELECT 'olist_order_reviews',       COUNT(*) FROM dbo.olist_order_reviews
+UNION ALL SELECT 'olist_geolocation',         COUNT(*) FROM dbo.olist_geolocation
 ORDER BY tbl;
 GO
 
 -- =============================================================
 -- SECTION 3: Master Staging View
--- Single source of truth for all reporting views.
--- Joins all tables, adds derived columns, translates categories.
+-- Joins all 9 tables into a single flat view with derived cols.
+-- All reporting views in 03_views/ build on top of this.
 -- =============================================================
 
 IF OBJECT_ID('dbo.vw_orders_staging', 'V') IS NOT NULL
@@ -314,7 +300,7 @@ GO
 
 CREATE VIEW dbo.vw_orders_staging AS
 SELECT
-    -- Order identifiers
+    -- Order identifiers & status
     o.order_id,
     o.order_status,
 
@@ -325,33 +311,33 @@ SELECT
     o.order_delivered_customer_date,
     o.order_estimated_delivery_date,
 
-    -- Derived date fields
-    CAST(o.order_purchase_timestamp AS DATE)            AS order_date,
-    YEAR(o.order_purchase_timestamp)                    AS order_year,
-    MONTH(o.order_purchase_timestamp)                   AS order_month,
+    -- Derived date fields for Tableau
+    CAST(o.order_purchase_timestamp AS DATE)        AS order_date,
+    YEAR(o.order_purchase_timestamp)                AS order_year,
+    MONTH(o.order_purchase_timestamp)               AS order_month,
     DATEFROMPARTS(
         YEAR(o.order_purchase_timestamp),
-        MONTH(o.order_purchase_timestamp), 1)           AS order_month_start,
+        MONTH(o.order_purchase_timestamp), 1)       AS order_month_start,
 
-    -- Delivery performance (days)
+    -- Delivery performance
     DATEDIFF(DAY,
         o.order_purchase_timestamp,
-        o.order_estimated_delivery_date)                AS estimated_delivery_days,
+        o.order_estimated_delivery_date)            AS estimated_delivery_days,
 
     DATEDIFF(DAY,
         o.order_purchase_timestamp,
-        o.order_delivered_customer_date)                AS actual_delivery_days,
+        o.order_delivered_customer_date)            AS actual_delivery_days,
 
     DATEDIFF(DAY,
         o.order_estimated_delivery_date,
-        o.order_delivered_customer_date)                AS delivery_delay_days,  -- negative = early, positive = late
+        o.order_delivered_customer_date)            AS delivery_delay_days,
 
     CASE
-        WHEN o.order_delivered_customer_date IS NULL        THEN 'Not Delivered'
+        WHEN o.order_delivered_customer_date IS NULL             THEN 'Not Delivered'
         WHEN o.order_delivered_customer_date
-           <= o.order_estimated_delivery_date              THEN 'On Time'
-        ELSE                                                     'Late'
-    END                                                 AS delivery_status,
+           <= o.order_estimated_delivery_date                    THEN 'On Time'
+        ELSE                                                          'Late'
+    END                                             AS delivery_status,
 
     -- Customer
     o.customer_id,
@@ -362,9 +348,9 @@ SELECT
 
     -- Product
     i.product_id,
-    p.product_category_name                             AS product_category_pt,
-    COALESCE(t.product_category_name_english, 'Uncategorized')
-                                                        AS product_category_en,
+    p.product_category_name                         AS product_category_pt,
+    COALESCE(t.product_category_name_english,
+             'Uncategorized')                       AS product_category_en,
     p.product_weight_g,
 
     -- Seller
@@ -372,18 +358,20 @@ SELECT
     s.seller_city,
     s.seller_state,
 
-    -- Order item details
+    -- Line item financials
     i.order_item_id,
     i.price,
     i.freight_value,
-    i.price + i.freight_value                           AS total_item_value,
-    i.price - i.freight_value                           AS contribution_margin,  -- revenue minus freight cost
+    i.price + i.freight_value                       AS total_item_value,
+    i.price - i.freight_value                       AS contribution_margin,
 
-    CASE WHEN i.price = 0 THEN 0
-         ELSE ROUND((i.price - i.freight_value) / i.price * 100, 2)
-    END                                                 AS contribution_margin_pct,
+    CASE
+        WHEN i.price = 0 THEN 0
+        ELSE ROUND((i.price - i.freight_value)
+                   / i.price * 100, 2)
+    END                                             AS contribution_margin_pct,
 
-    -- Payment (aggregated per order — one row per item so payment is repeated)
+    -- Payment (primary payment per order)
     pay.payment_type,
     pay.payment_installments,
     pay.payment_value,
@@ -392,28 +380,27 @@ SELECT
     r.review_score,
     CASE
         WHEN r.review_score >= 4 THEN 'Positive'
-        WHEN r.review_score = 3  THEN 'Neutral'
+        WHEN r.review_score  = 3 THEN 'Neutral'
         WHEN r.review_score <= 2 THEN 'Negative'
         ELSE                          'No Review'
-    END                                                 AS review_sentiment
+    END                                             AS review_sentiment
 
-FROM dbo.olist_orders           o
-JOIN  dbo.olist_customers       c   ON o.customer_id   = c.customer_id
-JOIN  dbo.olist_order_items     i   ON o.order_id      = i.order_id
-JOIN  dbo.olist_products        p   ON i.product_id    = p.product_id
-JOIN  dbo.olist_sellers         s   ON i.seller_id     = s.seller_id
+FROM      dbo.olist_orders               o
+JOIN      dbo.olist_customers            c   ON o.customer_id  = c.customer_id
+JOIN      dbo.olist_order_items          i   ON o.order_id     = i.order_id
+JOIN      dbo.olist_products             p   ON i.product_id   = p.product_id
+JOIN      dbo.olist_sellers              s   ON i.seller_id    = s.seller_id
 LEFT JOIN dbo.product_category_name_translation t
-                                    ON p.product_category_name = t.product_category_name
-LEFT JOIN dbo.olist_order_reviews r ON o.order_id      = r.order_id
+                                             ON p.product_category_name
+                                              = t.product_category_name
+LEFT JOIN dbo.olist_order_reviews        r   ON o.order_id     = r.order_id
 LEFT JOIN (
-    -- Take the primary payment per order (sequential = 1)
     SELECT order_id, payment_type, payment_installments, payment_value
-    FROM dbo.olist_order_payments
-    WHERE payment_sequential = 1
-) pay                               ON o.order_id      = pay.order_id
-
-WHERE o.order_status = 'delivered';  -- focus analysis on completed orders
+    FROM   dbo.olist_order_payments
+    WHERE  payment_sequential = 1
+)                                        pay ON o.order_id     = pay.order_id
+WHERE o.order_status = 'delivered';
 GO
 
-PRINT 'Master staging view created: dbo.vw_orders_staging';
-PRINT 'Next step: run sql/03_views/ files to build reporting views.';
+PRINT 'vw_orders_staging created successfully.';
+PRINT 'Next: run sql/03_views/ files to build reporting views.';
