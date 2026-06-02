@@ -31,3 +31,34 @@ An end-to-end data analytics portfolio project analyzing 100,000+ real e-commerc
 - [x] Run data quality checks on all tables
 - [x] Build master staging view with joins and derived columns
 - [x] Translate product categories (Portuguese → English)
+
+### Phase 3 — Revenue & Profitability Views
+- [x] Revenue by product category
+- [x] Revenue and freight margin by customer state
+- [x] Top and bottom seller performance
+- [x] Monthly revenue trends with MoM and YoY growth
+- [x] Payment method breakdown
+
+### Phase 4 — Delivery Performance Views
+- [x] Actual vs. estimated delivery analysis by state and category
+- [x] Delivery delay severity breakdown (1–7, 8–14, 14+ days late)
+- [x] On-time rate and delivery tier by seller state
+- [x] Review score correlation with delivery status
+
+### Phase 5 — Tableau Dashboard: Sales & Profitability
+- [ ] Executive KPI summary sheet
+- [ ] Revenue by category treemap
+- [ ] State-level revenue map
+- [ ] Monthly trend line chart
+- [ ] Payment type breakdown
+
+### Phase 6 — Tableau Dashboard: Delivery Performance
+- [ ] On-time vs. late delivery overview
+- [ ] Avg delay by state map
+- [ ] Category-level delivery heatmap
+- [ ] Seller delivery scorecard
+
+### Phase 7 — Insights & Documentation
+- [ ] Key findings writeup
+- [ ] Business recommendations
+- [ ] README final polish
