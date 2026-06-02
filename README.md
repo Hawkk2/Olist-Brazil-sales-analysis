@@ -25,10 +25,9 @@ An end-to-end data analytics portfolio project analyzing 100,000+ real e-commerc
 ### Phase 1 — Database Schema & Table Setup
 - [x] Design normalized schema across 9 source tables
 - [x] Write DDL with correct data types and indexes
-- [ ] Import all 9 CSV files into SQL Server
+- [x] Import all 9 CSV files into SQL Server
 
 ### Phase 2 — Data Quality & Staging
-- [ ] Run data quality checks on all tables
-- [ ] Build master staging view with joins and derived columns
-- [ ] Translate product categories (Portuguese → English)
-# Olist-Brazil-sales-analysis
+- [x] Run data quality checks on all tables
+- [x] Build master staging view with joins and derived columns
+- [x] Translate product categories (Portuguese → English)
