@@ -77,13 +77,24 @@ GO
 -- =============================================================
 -- SECTION 2: Migration — _dataset tables → typed tables
 -- Casts nvarchar columns to correct data types.
--- Safe to re-run: truncates destination tables first.
+-- Safe to re-run: deletes in FK-safe order before reloading.
 -- =============================================================
+
+-- Clear all typed tables in child-first order (respects FK constraints)
+DELETE FROM dbo.olist_order_reviews;
+DELETE FROM dbo.olist_order_payments;
+DELETE FROM dbo.olist_order_items;
+DELETE FROM dbo.olist_orders;
+DELETE FROM dbo.olist_geolocation;
+DELETE FROM dbo.olist_products;
+DELETE FROM dbo.product_category_name_translation;
+DELETE FROM dbo.olist_sellers;
+DELETE FROM dbo.olist_customers;
+GO
 
 -- -------------------------------------------------------
 -- Customers
 -- -------------------------------------------------------
-TRUNCATE TABLE dbo.olist_customers;
 
 INSERT INTO dbo.olist_customers (
     customer_id, customer_unique_id, customer_zip_code_prefix,
@@ -194,7 +205,7 @@ PRINT CONCAT('Orders loaded: ', @@ROWCOUNT);
 GO
 
 -- -------------------------------------------------------
--- Order Items
+-- Order Items (load after orders, products, sellers)
 -- -------------------------------------------------------
 INSERT INTO dbo.olist_order_items (
     order_id, order_item_id, product_id, seller_id,
