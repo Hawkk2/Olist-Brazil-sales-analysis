@@ -2,12 +2,15 @@
 -- Olist Brazil E-Commerce: Schema Creation
 -- Database: BrazilOlistDB
 -- Platform: T-SQL (SQL Server)
--- Description: Creates all 9 source tables matching the Olist
+-- Description: Creates Database
+--				Creates all 9 source tables matching the Olist
 --              CSV structure. Run this before importing data.
 --              Import all CSVs with columns set to nvarchar(255)
 --              first — clean_and_stage.sql handles type casting.
 -- Run order: 1 of 4
 -- =============================================================
+
+CREATE DATABASE BrazilOlistDB;
 
 USE BrazilOlistDB;
 GO

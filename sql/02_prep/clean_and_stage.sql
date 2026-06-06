@@ -225,6 +225,8 @@ GO
 -- -------------------------------------------------------
 -- Order Reviews
 -- -------------------------------------------------------
+-- The reviews dataset has duplicate review_ids (customer resubmissions).
+-- ROW_NUMBER deduplicates, keeping the most recent submission per review_id.
 INSERT INTO dbo.olist_order_reviews (
     review_id,
     order_id,
@@ -235,20 +237,34 @@ INSERT INTO dbo.olist_order_reviews (
     review_answer_timestamp
 )
 SELECT
-    TRIM(r.review_id),
-    TRIM(r.order_id),
-    TRY_CAST(r.review_score         AS TINYINT),
-    NULLIF(TRIM(r.review_comment_title),   ''),
-    NULLIF(TRIM(r.review_comment_message), ''),
-    TRY_CONVERT(DATETIME, r.review_creation_date),
-    TRY_CONVERT(DATETIME, r.review_answer_timestamp)
-FROM dbo.olist_order_reviews_dataset r
-JOIN dbo.olist_orders o
-    ON TRIM(r.order_id) = o.order_id
-WHERE r.review_id IS NOT NULL AND r.review_id <> '';
+    review_id,
+    order_id,
+    review_score,
+    review_comment_title,
+    review_comment_message,
+    review_creation_date,
+    review_answer_timestamp
+FROM (
+    SELECT
+        TRIM(r.review_id)                                AS review_id,
+        TRIM(r.order_id)                                 AS order_id,
+        TRY_CAST(r.review_score           AS TINYINT)    AS review_score,
+        NULLIF(TRIM(r.review_comment_title),   '')       AS review_comment_title,
+        NULLIF(TRIM(r.review_comment_message), '')       AS review_comment_message,
+        TRY_CONVERT(DATETIME, r.review_creation_date)    AS review_creation_date,
+        TRY_CONVERT(DATETIME, r.review_answer_timestamp) AS review_answer_timestamp,
+        ROW_NUMBER() OVER (
+            PARTITION BY TRIM(r.review_id)
+            ORDER BY TRY_CONVERT(DATETIME, r.review_answer_timestamp) DESC
+        ) AS rn
+    FROM dbo.olist_order_reviews_dataset r
+    JOIN dbo.olist_orders o
+        ON TRIM(r.order_id) = o.order_id
+    WHERE r.review_id IS NOT NULL AND r.review_id <> ''
+) deduped
+WHERE rn = 1;
 
 PRINT CONCAT('Order reviews loaded: ', @@ROWCOUNT);
-GO
 
 -- -------------------------------------------------------
 -- Geolocation (no FK constraints)
@@ -404,3 +420,66 @@ GO
 
 PRINT 'vw_orders_staging created successfully.';
 PRINT 'Next: run sql/03_views/ files to build reporting views.';
+
+
+-- =============================================================
+-- SECTION 4: Analysis of created tables and views. 
+-- =============================================================
+
+SELECT
+    TABLE_NAME,
+    COLUMN_NAME,
+    DATA_TYPE,
+    CHARACTER_MAXIMUM_LENGTH,
+    IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = 'dbo'
+  AND TABLE_NAME IN (
+      'olist_customers',
+      'olist_sellers',
+      'olist_products',
+      'olist_orders',
+      'olist_order_items',
+      'olist_order_payments',
+      'olist_order_reviews',
+      'olist_geolocation',
+      'product_category_name_translation'
+  )
+ORDER BY TABLE_NAME, ORDINAL_POSITION;
+GO
+
+-- -------------------------------------------------------
+-- Confirm all 9 typed tables exist and their row counts
+-- -------------------------------------------------------
+
+SELECT
+    t.TABLE_NAME,
+    p.rows AS row_count
+FROM INFORMATION_SCHEMA.TABLES t
+JOIN sys.partitions p
+    ON p.object_id = OBJECT_ID('dbo.' + t.TABLE_NAME)
+WHERE t.TABLE_SCHEMA = 'dbo'
+  AND t.TABLE_TYPE = 'BASE TABLE'
+  AND t.TABLE_NAME NOT LIKE '%_dataset'
+  AND p.index_id IN (0, 1)
+ORDER BY t.TABLE_NAME;
+
+-- -------------------------------------------------------
+-- Confirm all 8 views exist
+-- -------------------------------------------------------
+
+SELECT
+    TABLE_NAME  AS view_name
+FROM INFORMATION_SCHEMA.VIEWS
+WHERE TABLE_SCHEMA = 'dbo'
+ORDER BY TABLE_NAME;
+
+-- -------------------------------------------------------
+-- Confirm all 9 typed tables exist and their row counts
+-- -------------------------------------------------------
+
+
+
+-- -------------------------------------------------------
+-- Confirm all 9 typed tables exist and their row counts
+-- -------------------------------------------------------
