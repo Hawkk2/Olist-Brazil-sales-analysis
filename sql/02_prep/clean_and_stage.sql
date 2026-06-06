@@ -465,7 +465,7 @@ WHERE t.TABLE_SCHEMA = 'dbo'
 ORDER BY t.TABLE_NAME;
 
 -- -------------------------------------------------------
--- Confirm all 8 views exist
+-- Confirm main view exist, vw_orders_staging.  8 derived views in next file.
 -- -------------------------------------------------------
 
 SELECT
@@ -475,11 +475,36 @@ WHERE TABLE_SCHEMA = 'dbo'
 ORDER BY TABLE_NAME;
 
 -- -------------------------------------------------------
--- Confirm all 9 typed tables exist and their row counts
+-- Quick data spot-check — first 5 rows from each core table
 -- -------------------------------------------------------
 
+SELECT TOP 5 * FROM dbo.olist_customers;
+SELECT TOP 5 * FROM dbo.olist_sellers;
+SELECT TOP 5 * FROM dbo.olist_products;
+SELECT TOP 5 * FROM dbo.product_category_name_translation;
+SELECT TOP 5 * FROM dbo.olist_orders;
+SELECT TOP 5 * FROM dbo.olist_order_items;
+SELECT TOP 5 * FROM dbo.olist_order_payments;
+SELECT TOP 5 * FROM dbo.olist_order_reviews;
+SELECT TOP 5 * FROM dbo.olist_geolocation;
 
 
 -- -------------------------------------------------------
--- Confirm all 9 typed tables exist and their row counts
+-- Confirm  view return data (not broken)
 -- -------------------------------------------------------
+
+SELECT TOP 3 * FROM dbo.vw_orders_staging;
+
+-- -------------------------------------------------------
+-- Confirm Sanity check — typed tables vs. dataset tables row counts match
+-- -------------------------------------------------------
+
+SELECT 'customers'    AS tbl, COUNT(*) AS typed FROM dbo.olist_customers         UNION ALL
+SELECT 'sellers',              COUNT(*)          FROM dbo.olist_sellers            UNION ALL
+SELECT 'products',             COUNT(*)          FROM dbo.olist_products           UNION ALL
+SELECT 'translations',         COUNT(*)          FROM dbo.product_category_name_translation UNION ALL
+SELECT 'orders',               COUNT(*)          FROM dbo.olist_orders             UNION ALL
+SELECT 'order_items',          COUNT(*)          FROM dbo.olist_order_items        UNION ALL
+SELECT 'order_payments',       COUNT(*)          FROM dbo.olist_order_payments     UNION ALL
+SELECT 'order_reviews',        COUNT(*)          FROM dbo.olist_order_reviews      UNION ALL
+SELECT 'geolocation',          COUNT(*)          FROM dbo.olist_geolocation;
