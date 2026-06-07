@@ -64,3 +64,7 @@ GROUP BY customer_state;
 GO
 
 PRINT 'View created: dbo.vw_revenue_by_state';
+
+
+
+SELECT * FROM dbo.vw_revenue_by_state
