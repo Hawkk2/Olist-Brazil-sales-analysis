@@ -64,3 +64,6 @@ GROUP BY product_category_en;
 GO
 
 PRINT 'View created: dbo.vw_revenue_by_category';
+
+
+SELECT * FROM dbo.vw_revenue_by_category
