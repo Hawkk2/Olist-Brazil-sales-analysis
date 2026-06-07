@@ -58,3 +58,6 @@ CROSS JOIN totals t;
 GO
 
 PRINT 'View created: dbo.vw_payment_analysis';
+
+
+SELECT * FROM dbo.vw_payment_analysis
