@@ -82,3 +82,6 @@ FROM seller_base sb;
 GO
 
 PRINT 'View created: dbo.vw_seller_performance';
+
+
+SELECT * FROM dbo.vw_seller_performance
