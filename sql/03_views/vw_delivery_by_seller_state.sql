@@ -68,3 +68,7 @@ GROUP BY seller_state;
 GO
 
 PRINT 'View created: dbo.vw_delivery_by_seller_state';
+
+
+SELECT * FROM dbo.vw_delivery_by_seller_state
+
