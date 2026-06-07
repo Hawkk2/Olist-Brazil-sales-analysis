@@ -90,3 +90,7 @@ FROM monthly_base mb;
 GO
 
 PRINT 'View created: dbo.vw_monthly_revenue_trends';
+
+
+
+SELECT * FROM dbo.vw_monthly_revenue_trends
