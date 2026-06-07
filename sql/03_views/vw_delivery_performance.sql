@@ -9,6 +9,7 @@
 USE BrazilOlistDB;
 GO
 
+
 IF OBJECT_ID('dbo.vw_delivery_performance', 'V') IS NOT NULL
     DROP VIEW dbo.vw_delivery_performance;
 GO
@@ -88,3 +89,6 @@ GROUP BY
 GO
 
 PRINT 'View created: dbo.vw_delivery_performance';
+
+
+SELECT * FROM dbo.vw_delivery_performance
